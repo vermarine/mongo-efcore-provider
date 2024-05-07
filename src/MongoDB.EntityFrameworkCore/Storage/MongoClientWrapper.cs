@@ -40,7 +40,6 @@ public class MongoClientWrapper : IMongoClientWrapper
     private readonly IDiagnosticsLogger<DbLoggerCategory.Database.Command> _commandLogger;
     private readonly IMongoClient _client;
     private readonly IMongoDatabase _database;
-    private PropertyInfo? _getLoggedStages;
 
     /// <summary>
     /// Create a new instance of <see cref="MongoClientWrapper"/> with the supplied parameters.
@@ -74,26 +73,16 @@ public class MongoClientWrapper : IMongoClientWrapper
 
         if (executableQuery.Cardinality != ResultCardinality.Enumerable)
         {
-            return ExecuteScalar<T>(executableQuery);
+            // TODO: Figure out MQL capture for non-enumerable cardinality
+            return new[]
+            {
+                executableQuery.Provider.Execute<T>(executableQuery.Query)
+            };
         }
 
         var queryable = (IMongoQueryable<T>)executableQuery.Provider.CreateQuery<T>(executableQuery.Query);
         log = () => _commandLogger.ExecutedMqlQuery(executableQuery.CollectionNamespace, queryable.LoggedStages);
         return queryable;
-    }
-
-    private IEnumerable<T> ExecuteScalar<T>(MongoExecutableQuery executableQuery)
-    {
-        var result = executableQuery.Provider.Execute<T>(executableQuery.Query);
-
-        // We need to get this via reflection from the Mongo C# Driver for now.
-        _getLoggedStages ??= executableQuery.Provider.GetType().GetProperty("LoggedStages");
-        if (_getLoggedStages?.GetValue(executableQuery.Provider) is BsonDocument[] loggedStages)
-        {
-            _commandLogger.ExecutedMqlQuery(executableQuery.CollectionNamespace, loggedStages);
-        }
-
-        return [result];
     }
 
     /// <summary>
